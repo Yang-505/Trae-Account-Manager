@@ -479,4 +479,45 @@ impl TraeApiClient {
 
         Ok(summary)
     }
+
+    /// 查询礼包状态
+    pub async fn query_birthday_bonus(&self) -> Result<bool> {
+        let url = format!("{}/trae/api/v1/pay/query_birthday_bonus", self.api_base);
+        let headers = self.build_headers_token_only()?;
+
+        let response = self
+            .client
+            .post(&url)
+            .headers(headers)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow!("查询礼包状态失败: {}", response.status()));
+        }
+
+        let data: serde_json::Value = response.json().await?;
+
+        // 返回是否已领取
+        Ok(data["bonus_claimed"].as_bool().unwrap_or(false))
+    }
+
+    /// 领取礼包
+    pub async fn claim_birthday_bonus(&self) -> Result<()> {
+        let url = format!("{}/trae/api/v1/pay/claim_birthday_bonus", self.api_base);
+        let headers = self.build_headers_token_only()?;
+
+        let response = self
+            .client
+            .post(&url)
+            .headers(headers)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow!("领取礼包失败: {}", response.status()));
+        }
+
+        Ok(())
+    }
 }

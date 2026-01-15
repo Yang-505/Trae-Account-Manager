@@ -652,4 +652,28 @@ impl AccountManager {
         println!("[INFO] 成功从 Trae IDE 读取并添加账号: {}", account.email);
         Ok(Some(account))
     }
+
+    /// 领取生日礼包
+    pub async fn claim_birthday_bonus(&mut self, account_id: &str) -> Result<()> {
+        let account = self.store.accounts.iter()
+            .find(|a| a.id == account_id)
+            .ok_or_else(|| anyhow!("账号不存在"))?;
+
+        let token = account.jwt_token.as_ref()
+            .ok_or_else(|| anyhow!("账号没有 Token"))?;
+
+        let client = TraeApiClient::new_with_token(token)?;
+
+        // 先查询是否已领取
+        let claimed = client.query_birthday_bonus().await?;
+        if claimed {
+            return Err(anyhow!("该账号已领取过礼包"));
+        }
+
+        // 领取礼包
+        client.claim_birthday_bonus().await?;
+
+        println!("[INFO] 成功领取礼包: {}", account.email);
+        Ok(())
+    }
 }

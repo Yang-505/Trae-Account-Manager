@@ -178,6 +178,13 @@ async fn scan_trae_path() -> Result<String> {
     machine::scan_trae_path().map_err(Into::into)
 }
 
+/// 领取礼包
+#[tauri::command]
+async fn claim_gift(account_id: String, state: State<'_, AppState>) -> Result<()> {
+    let mut manager = state.account_manager.lock().await;
+    manager.claim_birthday_bonus(&account_id).await.map_err(Into::into)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let account_manager = AccountManager::new().expect("无法初始化账号管理器");
@@ -210,6 +217,7 @@ pub fn run() {
             get_trae_path,
             set_trae_path,
             scan_trae_path,
+            claim_gift,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

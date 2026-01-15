@@ -143,3 +143,10 @@ export async function setTraePath(path: string): Promise<void> {
 export async function scanTraePath(): Promise<string> {
   return invoke("scan_trae_path");
 }
+
+// ============ 礼包相关 API ============
+
+// 领取礼包
+export async function claimGift(accountId: string): Promise<void> {
+  return invoke("claim_gift", { accountId });
+}

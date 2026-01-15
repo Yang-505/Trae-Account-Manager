@@ -9,6 +9,7 @@ interface ContextMenuProps {
   onUpdateToken: () => void;
   onCopyToken: () => void;
   onSwitchAccount: () => void;
+  onClaimGift: () => void;
   onDelete: () => void;
   isCurrent?: boolean; // 是否是当前使用的账号
 }
@@ -22,6 +23,7 @@ export function ContextMenu({
   onUpdateToken,
   onCopyToken,
   onSwitchAccount,
+  onClaimGift,
   onDelete,
   isCurrent = false,
 }: ContextMenuProps) {
@@ -73,6 +75,10 @@ export function ContextMenu({
         >
           <span className="icon">{isCurrent ? "✓" : "🔀"}</span>
           {isCurrent ? "当前使用中" : "切换账号"}
+        </div>
+        <div className="context-menu-item" onClick={onClaimGift}>
+          <span className="icon">🎁</span>
+          获取礼包
         </div>
         <div className="context-menu-divider" />
         <div className="context-menu-item danger" onClick={onDelete}>

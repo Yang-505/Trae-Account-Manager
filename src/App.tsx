@@ -258,6 +258,31 @@ function App() {
     }
   };
 
+  // 获取礼包
+  const handleClaimGift = async (accountId: string) => {
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account) return;
+
+    setConfirmModal({
+      isOpen: true,
+      title: "获取礼包",
+      message: `确定要为账号 "${account.email || account.name}" 领取周年礼包吗？\n\n领取后将自动刷新账号额度。`,
+      type: "info",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        addToast("info", "正在领取礼包，请稍候...");
+        try {
+          await api.claimGift(accountId);
+          // 刷新账号数据
+          await handleRefreshAccount(accountId);
+          addToast("success", "礼包领取成功！额度已更新");
+        } catch (err: any) {
+          addToast("error", err.message || "领取礼包失败");
+        }
+      },
+    });
+  };
+
   // 导出账号
   const handleExportAccounts = async () => {
     try {
@@ -551,6 +576,10 @@ function App() {
           }}
           onSwitchAccount={() => {
             handleSwitchAccount(contextMenu.accountId);
+            setContextMenu(null);
+          }}
+          onClaimGift={() => {
+            handleClaimGift(contextMenu.accountId);
             setContextMenu(null);
           }}
           onDelete={() => {
