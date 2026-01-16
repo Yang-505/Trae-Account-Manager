@@ -435,6 +435,8 @@ impl AccountManager {
                 "region": acc.region,
                 "plan_type": acc.plan_type,
                 "avatar_url": acc.avatar_url,
+                "jwt_token": acc.jwt_token,
+                "machine_id": acc.machine_id,
             })
         }).collect();
 
@@ -473,7 +475,7 @@ impl AccountManager {
             }
         }
 
-   Ok(imported_count)
+        Ok(imported_count)
     }
 
     /// 获取使用事件
@@ -538,12 +540,30 @@ impl AccountManager {
 
     /// 从 Trae IDE 读取当前登录账号
     pub async fn read_trae_ide_account(&mut self) -> Result<Option<Account>> {
-        // 获取 Trae IDE 配置文件路径
-        let appdata = std::env::var("APPDATA")
-            .map_err(|_| anyhow!("无法获取 APPDATA 环境变量"))?;
+        // 获取 Trae IDE 配置文件路径（跨平台支持）
+        #[cfg(target_os = "windows")]
+        let trae_data_path = {
+            let appdata = std::env::var("APPDATA")
+                .map_err(|_| anyhow!("无法获取 APPDATA 环境变量"))?;
+            PathBuf::from(appdata).join("Trae")
+        };
+        
+        #[cfg(target_os = "macos")]
+        let trae_data_path = {
+            let home = std::env::var("HOME")
+                .map_err(|_| anyhow!("无法获取 HOME 环境变量"))?;
+            PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+                .join("Trae")
+        };
+        
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        let trae_data_path: PathBuf = {
+            return Err(anyhow!("此功能仅支持 Windows 和 macOS 系统"));
+        };
 
-        let storage_path = PathBuf::from(appdata)
-            .join("Trae")
+        let storage_path = trae_data_path
             .join("User")
             .join("globalStorage")
             .join("storage.json");

@@ -55,10 +55,26 @@ pub fn reset_machine_guid() -> Result<String> {
 }
 
 /// 获取 Trae IDE 数据目录路径
+#[cfg(target_os = "windows")]
 fn get_trae_data_path() -> Result<PathBuf> {
     let appdata = std::env::var("APPDATA")
         .map_err(|_| anyhow!("无法获取 APPDATA 环境变量"))?;
     Ok(PathBuf::from(appdata).join("Trae"))
+}
+
+#[cfg(target_os = "macos")]
+fn get_trae_data_path() -> Result<PathBuf> {
+    let home = std::env::var("HOME")
+        .map_err(|_| anyhow!("无法获取 HOME 环境变量"))?;
+    Ok(PathBuf::from(home)
+        .join("Library")
+        .join("Application Support")
+        .join("Trae"))
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn get_trae_data_path() -> Result<PathBuf> {
+    Err(anyhow!("此功能仅支持 Windows 和 macOS 系统"))
 }
 
 /// 读取 Trae IDE 的机器码
@@ -103,6 +119,16 @@ pub fn is_trae_running() -> bool {
     }
 }
 
+#[cfg(target_os = "macos")]
+pub fn is_trae_running() -> bool {
+    // 使用 pgrep -f 匹配进程路径中包含 "Trae.app" 的进程
+    Command::new("pgrep")
+        .args(["-f", "Trae.app/Contents/MacOS"])
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
 /// 关闭 Trae IDE 进程
 #[cfg(target_os = "windows")]
 pub fn kill_trae() -> Result<()> {
@@ -143,14 +169,50 @@ pub fn kill_trae() -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+pub fn kill_trae() -> Result<()> {
+    if !is_trae_running() {
+        println!("[INFO] Trae IDE 未运行");
+        return Ok(());
+    }
+
+    println!("[INFO] 正在关闭 Trae IDE...");
+
+    // 使用 osascript 优雅关闭 Trae 应用
+    let _ = Command::new("osascript")
+        .args(["-e", "tell application \"Trae\" to quit"])
+        .output();
+
+    // 等待一小段时间
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+
+    // 如果还在运行，使用 pkill 强制关闭
+    if is_trae_running() {
+        println!("[INFO] 优雅关闭失败，正在强制关闭...");
+        let _ = Command::new("pkill")
+            .args(["-9", "-f", "Trae.app/Contents/MacOS"])
+            .output();
+        
+        // 再等待一下
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+    }
+
+    if is_trae_running() {
+        return Err(anyhow!("无法关闭 Trae IDE，请手动关闭后重试"));
+    }
+
+    println!("[INFO] Trae IDE 已关闭");
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn is_trae_running() -> bool {
     false
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn kill_trae() -> Result<()> {
-    Err(anyhow!("此功能仅支持 Windows 系统"))
+    Err(anyhow!("此功能仅支持 Windows 和 macOS 系统"))
 }
 
 /// 获取 Trae IDE 配置文件路径
@@ -176,6 +238,7 @@ pub fn get_saved_trae_path() -> Result<String> {
 }
 
 /// 保存 Trae IDE 路径
+#[cfg(target_os = "windows")]
 pub fn save_trae_path(path: &str) -> Result<()> {
     let exe_path = PathBuf::from(path);
     if !exe_path.exists() {
@@ -190,15 +253,53 @@ pub fn save_trae_path(path: &str) -> Result<()> {
     Ok(())
 }
 
-/// 自动扫描 Trae IDE 安装路径（已移除，仅保留接口兼容性）
+#[cfg(target_os = "macos")]
+pub fn save_trae_path(path: &str) -> Result<()> {
+    let app_path = PathBuf::from(path);
+    if !app_path.exists() {
+        return Err(anyhow!("指定的路径不存在"));
+    }
+    // macOS 应用是 .app bundle 目录
+    if !path.to_lowercase().ends_with(".app") {
+        return Err(anyhow!("请选择 Trae.app 应用程序"));
+    }
+    let config_path = get_trae_config_path()?;
+    fs::write(&config_path, path)?;
+    println!("[INFO] 已保存 Trae IDE 路径: {}", path);
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn save_trae_path(_path: &str) -> Result<()> {
+    Err(anyhow!("此功能仅支持 Windows 和 macOS 系统"))
+}
+
+/// 自动扫描 Trae IDE 安装路径
 #[cfg(target_os = "windows")]
 pub fn scan_trae_path() -> Result<String> {
     Err(anyhow!("请手动设置 Trae IDE 路径"))
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
 pub fn scan_trae_path() -> Result<String> {
-    Err(anyhow!("此功能仅支持 Windows 系统"))
+    // 常见的 macOS 应用安装位置
+    let possible_paths = [
+        "/Applications/Trae.app",
+        &format!("{}/Applications/Trae.app", std::env::var("HOME").unwrap_or_default()),
+    ];
+    
+    for path in possible_paths {
+        if PathBuf::from(path).exists() {
+            return Ok(path.to_string());
+        }
+    }
+    
+    Err(anyhow!("未找到 Trae IDE，请手动设置路径"))
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn scan_trae_path() -> Result<String> {
+    Err(anyhow!("此功能仅支持 Windows 和 macOS 系统"))
 }
 
 /// 打开 Trae IDE
@@ -223,9 +324,38 @@ pub fn open_trae() -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
 pub fn open_trae() -> Result<()> {
-    Err(anyhow!("此功能仅支持 Windows 系统"))
+    let trae_app = match get_saved_trae_path() {
+        Ok(path) => PathBuf::from(path),
+        Err(_) => {
+            // 尝试自动扫描
+            match scan_trae_path() {
+                Ok(path) => PathBuf::from(path),
+                Err(_) => return Err(anyhow!("未设置 Trae IDE 路径，请在设置中配置")),
+            }
+        }
+    };
+
+    if !trae_app.exists() {
+        return Err(anyhow!("Trae IDE 路径无效，请在设置中重新配置"));
+    }
+
+    println!("[INFO] 正在启动 Trae IDE: {}", trae_app.display());
+
+    Command::new("open")
+        .arg("-a")
+        .arg(&trae_app)
+        .spawn()
+        .map_err(|e| anyhow!("启动 Trae IDE 失败: {}", e))?;
+
+    println!("[INFO] Trae IDE 已启动");
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn open_trae() -> Result<()> {
+    Err(anyhow!("此功能仅支持 Windows 和 macOS 系统"))
 }
 
 /// 账号登录信息结构（用于写入 Trae IDE）
@@ -579,18 +709,54 @@ fn md5_hash(input: &str) -> u128 {
     ((h1 as u128) << 64) | (h2 as u128)
 }
 
-// 非 Windows 平台的占位实现
-#[cfg(not(target_os = "windows"))]
+// macOS 平台实现
+#[cfg(target_os = "macos")]
 pub fn get_machine_guid() -> Result<String> {
-    Err(anyhow!("此功能仅支持 Windows 系统"))
+    // 使用 ioreg 命令读取 IOPlatformUUID
+    let output = Command::new("ioreg")
+        .args(["-rd1", "-c", "IOPlatformExpertDevice"])
+        .output()
+        .map_err(|e| anyhow!("执行 ioreg 失败: {}", e))?;
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    // 解析 IOPlatformUUID
+    for line in stdout.lines() {
+        if line.contains("IOPlatformUUID") {
+            // 格式: "IOPlatformUUID" = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+            if let Some(uuid) = line.split('"').nth(3) {
+                return Ok(uuid.to_string());
+            }
+        }
+    }
+    
+    Err(anyhow!("无法获取 IOPlatformUUID"))
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
 pub fn set_machine_guid(_new_guid: &str) -> Result<()> {
-    Err(anyhow!("此功能仅支持 Windows 系统"))
+    // macOS 无法修改系统 UUID
+    Err(anyhow!("macOS 不支持修改系统机器码"))
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
 pub fn reset_machine_guid() -> Result<String> {
-    Err(anyhow!("此功能仅支持 Windows 系统"))
+    // macOS 无法重置系统 UUID
+    Err(anyhow!("macOS 不支持重置系统机器码"))
+}
+
+// 非 Windows/macOS 平台的占位实现
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn get_machine_guid() -> Result<String> {
+    Err(anyhow!("此功能仅支持 Windows 和 macOS 系统"))
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn set_machine_guid(_new_guid: &str) -> Result<()> {
+    Err(anyhow!("此功能仅支持 Windows 和 macOS 系统"))
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn reset_machine_guid() -> Result<String> {
+    Err(anyhow!("此功能仅支持 Windows 和 macOS 系统"))
 }
