@@ -499,4 +499,6 @@ Made with ❤️ by Yang-505
 
 ## 🎉 Star 历史
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Yang-505/Trae-Account-Manager&type=Date)](https://star-history.com/#Yang-505/Trae-Account-Manager&Date)
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Yang-505/Trae-Account-Manager&type=date&legend=top-left)](https://www.star-history.com/#Yang-505/Trae-Account-Manager&type=date&legend=top-left)
