@@ -114,11 +114,9 @@ export function Settings({ onToast }: SettingsProps) {
 
   return (
     <div className="settings-page">
-      <h2 className="page-title">设置</h2>
-
-      {/* Trae IDE 机器码 */}
+      {/* 机器码 */}
       <div className="settings-section">
-        <h3>Trae IDE 机器码</h3>
+        <h3>机器码</h3>
         <div className="machine-id-card trae-card">
           <div className="machine-id-header">
             <div className="machine-id-icon trae-icon">
@@ -129,8 +127,8 @@ export function Settings({ onToast }: SettingsProps) {
               </svg>
             </div>
             <div className="machine-id-title">
-              <span>Trae IDE MachineId</span>
-              <span className="machine-id-subtitle">Trae IDE 客户端唯一标识符</span>
+              <span>MachineId</span>
+              <span className="machine-id-subtitle">客户端唯一标识符</span>
             </div>
           </div>
           <div className="machine-id-value">
@@ -180,14 +178,14 @@ export function Settings({ onToast }: SettingsProps) {
               <line x1="12" y1="9" x2="12" y2="13"/>
               <line x1="12" y1="17" x2="12.01" y2="17"/>
             </svg>
-            <span>清除登录状态会重置机器码并删除所有登录信息，Trae IDE 将需要重新登录。请先关闭 Trae IDE。</span>
+            <span>清除登录状态会重置机器码并删除所有登录信息，客户端将需要重新登录。请先关闭客户端。</span>
           </div>
         </div>
       </div>
 
-      {/* Trae IDE 路径设置 */}
+      {/* 路径设置 */}
       <div className="settings-section">
-        <h3>Trae IDE 路径</h3>
+        <h3>客户端路径</h3>
         <div className="machine-id-card trae-card">
           <div className="machine-id-header">
             <div className="machine-id-icon trae-icon">
@@ -196,8 +194,8 @@ export function Settings({ onToast }: SettingsProps) {
               </svg>
             </div>
             <div className="machine-id-title">
-              <span>Trae IDE 安装路径</span>
-              <span className="machine-id-subtitle">用于自动打开 Trae IDE</span>
+              <span>安装路径</span>
+              <span className="machine-id-subtitle">用于自动打开客户端</span>
             </div>
           </div>
           <div className="machine-id-value">
@@ -234,7 +232,7 @@ export function Settings({ onToast }: SettingsProps) {
               <path d="M12 16v-4"/>
               <path d="M12 8h.01"/>
             </svg>
-            <span>切换账号后会自动打开 Trae IDE。如果自动扫描找不到，请手动设置 Trae.exe 的完整路径。</span>
+            <span>切换账号后会自动打开客户端。如果自动扫描找不到，请手动设置 Trae.exe 的完整路径。</span>
           </div>
         </div>
       </div>

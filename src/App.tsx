@@ -5,12 +5,13 @@ import { AccountListItem } from "./components/AccountListItem";
 import { AddAccountModal } from "./components/AddAccountModal";
 import { ContextMenu } from "./components/ContextMenu";
 import { DetailModal } from "./components/DetailModal";
-import { Toast, ToastMessage } from "./components/Toast";
+import { Toast } from "./components/Toast";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { UpdateTokenModal } from "./components/UpdateTokenModal";
 import { Dashboard } from "./pages/Dashboard";
 import { Settings } from "./pages/Settings";
 import { About } from "./pages/About";
+import { useToast } from "./hooks/useToast";
 import * as api from "./api";
 import type { AccountBrief, UsageSummary } from "./types";
 import "./App.css";
@@ -30,8 +31,8 @@ function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
 
-  // Toast 通知状态
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  // 使用自定义 Toast hook
+  const { toasts, addToast, removeToast } = useToast();
 
   // 确认弹窗状态
   const [confirmModal, setConfirmModal] = useState<{
@@ -61,33 +62,24 @@ function App() {
     accountName: string;
   } | null>(null);
 
-  // 添加 Toast 通知
-  const addToast = useCallback((type: ToastMessage["type"], message: string, duration?: number) => {
-    const id = Date.now().toString();
-    setToasts((prev) => [...prev, { id, type, message, duration }]);
-  }, []);
-
-  // 移除 Toast 通知
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
-
-  // 加载账号列表
+  // 加载账号列表（优化：使用 Promise.allSettled 确保部分失败不影响整体）
   const loadAccounts = useCallback(async () => {
     setLoading(true);
     try {
       const list = await api.getAccounts();
-      // 为每个账号加载使用量
-      const accountsWithUsage: AccountWithUsage[] = await Promise.all(
-        list.map(async (account) => {
-          try {
-            const usage = await api.getAccountUsage(account.id);
-            return { ...account, usage };
-          } catch {
-            return { ...account, usage: null };
-          }
-        })
+      // 为每个账号并行加载使用量，使用 allSettled 确保部分失败不影响其他账号
+      const usageResults = await Promise.allSettled(
+        list.map((account) => api.getAccountUsage(account.id))
       );
+
+      const accountsWithUsage: AccountWithUsage[] = list.map((account, index) => {
+        const result = usageResults[index];
+        return {
+          ...account,
+          usage: result.status === 'fulfilled' ? result.value : null
+        };
+      });
+
       setAccounts(accountsWithUsage);
     } catch (err: any) {
       setError(err.message || "加载账号失败");
@@ -227,10 +219,17 @@ function App() {
   };
 
   // 查看详情
-  const handleViewDetail = (accountId: string) => {
+  const handleViewDetail = async (accountId: string) => {
     const account = accounts.find((a) => a.id === accountId);
     if (account) {
-      setDetailAccount(account);
+      try {
+        // 获取完整的账号信息（包含 token 和 cookies）
+        const fullAccount = await api.getAccount(accountId);
+        setDetailAccount({ ...account, ...fullAccount });
+      } catch (err: any) {
+        addToast("error", "获取账号详情失败");
+        console.error("获取账号详情失败:", err);
+      }
     }
   };
 
@@ -323,44 +322,78 @@ function App() {
     input.click();
   };
 
-  // 批量刷新选中账号
+  // 批量刷新选中账号（优化：并行处理，添加进度反馈）
   const handleBatchRefresh = async () => {
     if (selectedIds.size === 0) {
       addToast("warning", "请先选择要刷新的账号");
       return;
     }
 
-    addToast("info", `正在刷新 ${selectedIds.size} 个账号...`);
+    const ids = Array.from(selectedIds);
+    addToast("info", `正在刷新 ${ids.length} 个账号...`);
 
-    for (const id of selectedIds) {
-      await handleRefreshAccount(id);
+    // 并行刷新所有选中的账号
+    const results = await Promise.allSettled(
+      ids.map(async (id) => {
+        try {
+          const usage = await api.getAccountUsage(id);
+          setAccounts((prev) =>
+            prev.map((a) => (a.id === id ? { ...a, usage } : a))
+          );
+          return { id, success: true };
+        } catch (err: any) {
+          return { id, success: false, error: err.message };
+        }
+      })
+    );
+
+    // 统计结果
+    const successCount = results.filter(
+      (r) => r.status === 'fulfilled' && r.value.success
+    ).length;
+    const failCount = ids.length - successCount;
+
+    if (failCount === 0) {
+      addToast("success", `成功刷新 ${successCount} 个账号`);
+    } else {
+      addToast("warning", `刷新完成：${successCount} 成功，${failCount} 失败`);
     }
   };
 
-  // 批量删除选中账号
+  // 批量删除选中账号（优化：改进错误处理和反馈）
   const handleBatchDelete = () => {
     if (selectedIds.size === 0) {
       addToast("warning", "请先选择要删除的账号");
       return;
     }
 
+    const ids = Array.from(selectedIds);
     setConfirmModal({
       isOpen: true,
       title: "批量删除",
-      message: `确定要删除选中的 ${selectedIds.size} 个账号吗？此操作无法撤销。`,
+      message: `确定要删除选中的 ${ids.length} 个账号吗？此操作无法撤销。`,
       type: "danger",
       onConfirm: async () => {
-        try {
-          for (const id of selectedIds) {
-            await api.removeAccount(id);
-          }
-          setSelectedIds(new Set());
-          addToast("success", `已删除 ${selectedIds.size} 个账号`);
-          await loadAccounts();
-        } catch (err: any) {
-          addToast("error", err.message || "删除失败");
-        }
         setConfirmModal(null);
+        addToast("info", `正在删除 ${ids.length} 个账号...`);
+
+        // 并行删除所有选中的账号
+        const results = await Promise.allSettled(
+          ids.map((id) => api.removeAccount(id))
+        );
+
+        // 统计结果
+        const successCount = results.filter((r) => r.status === 'fulfilled').length;
+        const failCount = ids.length - successCount;
+
+        setSelectedIds(new Set());
+        await loadAccounts();
+
+        if (failCount === 0) {
+          addToast("success", `成功删除 ${successCount} 个账号`);
+        } else {
+          addToast("warning", `删除完成：${successCount} 成功，${failCount} 失败`);
+        }
       },
     });
   };
@@ -386,7 +419,7 @@ function App() {
             <header className="page-header">
               <div className="header-left">
                 <h2 className="page-title">账号管理</h2>
-                <p>管理您的 Trae 账号</p>
+                <p>管理您的账号</p>
               </div>
               <div className="header-right">
                 <span className="account-count">共 {accounts.length} 个账号</span>
@@ -530,9 +563,29 @@ function App() {
           </>
         )}
 
-        {currentPage === "settings" && <Settings onToast={addToast} />}
+        {currentPage === "settings" && (
+          <>
+            <header className="page-header">
+              <div className="header-left">
+                <h2 className="page-title">设置</h2>
+                <p>配置应用程序选项</p>
+              </div>
+            </header>
+            <Settings onToast={addToast} />
+          </>
+        )}
 
-        {currentPage === "about" && <About />}
+        {currentPage === "about" && (
+          <>
+            <header className="page-header">
+              <div className="header-left">
+                <h2 className="page-title">关于</h2>
+                <p>应用程序信息</p>
+              </div>
+            </header>
+            <About />
+          </>
+        )}
       </div>
 
       {/* Toast 通知 */}

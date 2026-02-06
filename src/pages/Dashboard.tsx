@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import type { UsageSummary } from "../types";
 import { UsageEvents } from "../components/UsageEvents";
@@ -12,25 +13,36 @@ interface DashboardProps {
   }>;
 }
 
-export function Dashboard({ accounts }: DashboardProps) {
+export const Dashboard = memo(function Dashboard({ accounts }: DashboardProps) {
   const totalAccounts = accounts.length;
-  const activeAccounts = accounts.filter(a => a.usage && a.usage.fast_request_left > 0).length;
 
-  const totalUsed = accounts.reduce((sum, a) => {
-    if (!a.usage) return sum;
-    return sum + a.usage.fast_request_used + a.usage.extra_fast_request_used;
-  }, 0);
+  // 合并所有统计计算为一次遍历，提升性能
+  const stats = accounts.reduce((acc, a) => {
+    if (a.usage) {
+      // 统计活跃账号
+      if (a.usage.fast_request_left > 0) {
+        acc.activeAccounts++;
+      }
 
-  const totalLimit = accounts.reduce((sum, a) => {
-    if (!a.usage) return sum;
-    return sum + a.usage.fast_request_limit + a.usage.extra_fast_request_limit;
-  }, 0);
+      // 累加使用量、配额和剩余量
+      acc.totalUsed += a.usage.fast_request_used + a.usage.extra_fast_request_used;
+      acc.totalLimit += a.usage.fast_request_limit + a.usage.extra_fast_request_limit;
+      acc.totalLeft += a.usage.fast_request_left + a.usage.extra_fast_request_left;
 
-  const totalLeft = accounts.reduce((sum, a) => {
-    if (!a.usage) return sum;
-    return sum + a.usage.fast_request_left + a.usage.extra_fast_request_left;
-  }, 0);
+      // 统计套餐分布
+      const planType = a.usage.plan_type || 'Free';
+      acc.quotaMap.set(planType, (acc.quotaMap.get(planType) || 0) + 1);
+    }
+    return acc;
+  }, {
+    activeAccounts: 0,
+    totalUsed: 0,
+    totalLimit: 0,
+    totalLeft: 0,
+    quotaMap: new Map<string, number>()
+  });
 
+  const { activeAccounts, totalUsed, totalLimit, totalLeft, quotaMap } = stats;
   const usagePercent = totalLimit > 0 ? Math.round((totalUsed / totalLimit) * 100) : 0;
 
   const pieData = [
@@ -38,19 +50,8 @@ export function Dashboard({ accounts }: DashboardProps) {
     { name: '剩余', value: totalLeft, color: '#e5e7eb' },
   ];
 
-
-  // 配额分布
-  const quotaData = accounts.reduce((acc, a) => {
-    if (!a.usage) return acc;
-    const planType = a.usage.plan_type || 'Free';
-    const existing = acc.find(item => item.name === planType);
-    if (existing) {
-      existing.value += 1;
-    } else {
-      acc.push({ name: planType, value: 1 });
-    }
-    return acc;
-  }, [] as { name: string; value: number }[]);
+  // 将 Map 转换为数组
+  const quotaData = Array.from(quotaMap.entries()).map(([name, value]) => ({ name, value }));
 
   const COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef'];
 
@@ -59,7 +60,7 @@ export function Dashboard({ accounts }: DashboardProps) {
       <div className="dashboard-header">
         <div className="welcome-section">
           <h1>欢迎回来 👋</h1>
-          <p>这是您的 Trae 账号使用概览</p>
+          <p>这是您的账号使用概览</p>
         </div>
         <div className="header-stats">
           <div className="quick-stat">
@@ -261,4 +262,4 @@ export function Dashboard({ accounts }: DashboardProps) {
       )}
     </div>
   );
-}
+});
