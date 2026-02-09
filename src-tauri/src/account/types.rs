@@ -84,6 +84,8 @@ pub struct AccountBrief {
     pub machine_id: Option<String>,
     /// 是否是当前 Trae IDE 正在使用的账号
     pub is_current: bool,
+    /// Token 过期时间
+    pub token_expired_at: Option<String>,
 }
 
 impl From<&Account> for AccountBrief {
@@ -98,6 +100,7 @@ impl From<&Account> for AccountBrief {
             created_at: account.created_at,
             machine_id: account.machine_id.clone(),
             is_current: false, // 默认为 false，由 AccountManager 设置
+            token_expired_at: account.token_expired_at.clone(),
         }
     }
 }
@@ -115,6 +118,7 @@ impl AccountBrief {
             created_at: account.created_at,
             machine_id: account.machine_id.clone(),
             is_current,
+            token_expired_at: account.token_expired_at.clone(),
         }
     }
 }

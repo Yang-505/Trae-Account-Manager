@@ -673,6 +673,54 @@ impl AccountManager {
         Ok(Some(account))
     }
 
+    /// 判断账号的 Token 是否即将过期（< 1小时）或已过期
+    fn is_token_expiring_soon(account: &Account) -> bool {
+        match &account.token_expired_at {
+            None => true, // 无过期时间信息，需要刷新
+            Some(expired_at) => {
+                match chrono::DateTime::parse_from_rfc3339(expired_at) {
+                    Ok(expiry) => {
+                        let now = chrono::Utc::now();
+                        let one_hour = chrono::Duration::hours(1);
+                        expiry.with_timezone(&chrono::Utc) < now + one_hour
+                    }
+                    Err(_) => {
+                        // 尝试解析为时间戳（秒）
+                        if let Ok(ts) = expired_at.parse::<i64>() {
+                            let now = chrono::Utc::now().timestamp();
+                            ts < now + 3600
+                        } else {
+                            true // 无法解析，需要刷新
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// 批量刷新所有即将过期的 Token
+    pub async fn refresh_all_tokens(&mut self) -> Result<Vec<String>> {
+        let mut refreshed = Vec::new();
+        let account_ids: Vec<String> = self.store.accounts.iter()
+            .filter(|a| !a.cookies.is_empty())
+            .filter(|a| Self::is_token_expiring_soon(a))
+            .map(|a| a.id.clone())
+            .collect();
+
+        for id in account_ids {
+            match self.refresh_token(&id).await {
+                Ok(_) => {
+                    println!("[INFO] 自动刷新 Token 成功: {}", id);
+                    refreshed.push(id);
+                }
+                Err(e) => {
+                    println!("[WARN] 自动刷新 Token 失败 {}: {}", id, e);
+                }
+            }
+        }
+        Ok(refreshed)
+    }
+
     /// 领取生日礼包
     pub async fn claim_birthday_bonus(&mut self, account_id: &str) -> Result<()> {
         let account = self.store.accounts.iter()

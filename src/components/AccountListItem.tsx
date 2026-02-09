@@ -8,6 +8,7 @@ interface AccountListItemProps {
     avatar_url: string;
     plan_type: string;
     created_at: number;
+    token_expired_at?: string | null;
   };
   usage: UsageSummary | null;
   selected: boolean;
@@ -42,7 +43,17 @@ export function AccountListItem({ account, usage, selected, onSelect, onContextM
     return `${Math.floor(diffDays / 365)}年前`;
   };
 
-  const isTokenExpired = false; // TODO: 根据实际 token 过期时间判断
+  const getTokenStatus = (): "normal" | "expiring" | "expired" | "unknown" => {
+    if (!account.token_expired_at) return "unknown";
+    const expiry = new Date(account.token_expired_at).getTime();
+    if (isNaN(expiry)) return "unknown";
+    const now = Date.now();
+    if (expiry < now) return "expired";
+    if (expiry - now < 3600000) return "expiring"; // < 1小时
+    return "normal";
+  };
+
+  const tokenStatus = getTokenStatus();
 
   return (
     <div
@@ -101,8 +112,8 @@ export function AccountListItem({ account, usage, selected, onSelect, onContextM
       </div>
 
       <div className="list-item-status">
-        <span className={`status-dot ${isTokenExpired ? "expired" : "normal"}`}></span>
-        <span>{isTokenExpired ? "过期" : "正常"}</span>
+        <span className={`status-dot ${tokenStatus === "expired" ? "expired" : tokenStatus === "expiring" ? "expiring" : "normal"}`}></span>
+        <span>{tokenStatus === "expired" ? "过期" : tokenStatus === "expiring" ? "即将过期" : "正常"}</span>
       </div>
 
       <div className="list-item-actions">

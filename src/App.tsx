@@ -7,6 +7,7 @@ import { ContextMenu } from "./components/ContextMenu";
 import { DetailModal } from "./components/DetailModal";
 import { Toast } from "./components/Toast";
 import { ConfirmModal } from "./components/ConfirmModal";
+import { InfoModal } from "./components/InfoModal";
 import { UpdateTokenModal } from "./components/UpdateTokenModal";
 import { Dashboard } from "./pages/Dashboard";
 import { Settings } from "./pages/Settings";
@@ -62,28 +63,48 @@ function App() {
     accountName: string;
   } | null>(null);
 
-  // 加载账号列表（优化：使用 Promise.allSettled 确保部分失败不影响整体）
+  // 信息展示弹窗状态
+  const [infoModal, setInfoModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    icon: string;
+    sections: Array<{
+      title?: string;
+      content: string;
+      type?: "text" | "code" | "list";
+    }>;
+    confirmText: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  // 加载账号列表（先显示列表，再后台加载使用量）
   const loadAccounts = useCallback(async () => {
     setLoading(true);
     try {
       const list = await api.getAccounts();
-      // 为每个账号并行加载使用量，使用 allSettled 确保部分失败不影响其他账号
-      const usageResults = await Promise.allSettled(
-        list.map((account) => api.getAccountUsage(account.id))
-      );
 
-      const accountsWithUsage: AccountWithUsage[] = list.map((account, index) => {
-        const result = usageResults[index];
-        return {
-          ...account,
-          usage: result.status === 'fulfilled' ? result.value : null
-        };
-      });
+      // 先立即显示账号列表（不等待使用量加载）
+      setAccounts(list.map((account) => ({ ...account, usage: undefined })));
+      setLoading(false);
 
-      setAccounts(accountsWithUsage);
+      // 后台并行加载使用量
+      if (list.length > 0) {
+        const usageResults = await Promise.allSettled(
+          list.map((account) => api.getAccountUsage(account.id))
+        );
+
+        setAccounts((prev) =>
+          prev.map((account, index) => {
+            const result = usageResults[index];
+            return {
+              ...account,
+              usage: result.status === 'fulfilled' ? result.value : null
+            };
+          })
+        );
+      }
     } catch (err: any) {
       setError(err.message || "加载账号失败");
-    } finally {
       setLoading(false);
     }
   }, []);
@@ -91,6 +112,29 @@ function App() {
   // 初始加载
   useEffect(() => {
     loadAccounts();
+  }, [loadAccounts]);
+
+  // 自动刷新即将过期的 Token
+  useEffect(() => {
+    // 启动时刷新
+    api.refreshAllTokens().then((refreshed) => {
+      if (refreshed.length > 0) {
+        console.log(`[INFO] 启动时自动刷新了 ${refreshed.length} 个 Token`);
+        loadAccounts();
+      }
+    }).catch(console.error);
+
+    // 每30分钟刷新一次
+    const interval = setInterval(() => {
+      api.refreshAllTokens().then((refreshed) => {
+        if (refreshed.length > 0) {
+          console.log(`[INFO] 定时自动刷新了 ${refreshed.length} 个 Token`);
+          loadAccounts();
+        }
+      }).catch(console.error);
+    }, 30 * 60 * 1000);
+
+    return () => clearInterval(interval);
   }, [loadAccounts]);
 
   // 添加账号
@@ -282,6 +326,71 @@ function App() {
     });
   };
 
+  // 显示导出说明
+  const handleShowExportInfo = () => {
+    if (accounts.length === 0) {
+      addToast("warning", "没有账号可以导出");
+      return;
+    }
+
+    setInfoModal({
+      isOpen: true,
+      title: "导出账号说明",
+      icon: "📤",
+      sections: [
+        {
+          title: "📄 导出格式",
+          content: "JSON 文件 (.json)",
+          type: "text"
+        },
+        {
+          title: "📁 保存位置",
+          content: "浏览器默认下载文件夹\n文件名格式：trae-accounts-YYYY-MM-DD.json",
+          type: "text"
+        },
+        {
+          title: "📋 文件内容",
+          content: `<ul>
+<li>所有账号的完整信息</li>
+<li>Token 和 Cookies 数据</li>
+<li>使用量统计信息</li>
+<li>账号创建和更新时间</li>
+</ul>`,
+          type: "list"
+        },
+        {
+          title: "✅ 导出后可以",
+          content: `<ul>
+<li>备份账号数据</li>
+<li>迁移到其他设备</li>
+<li>恢复误删的账号</li>
+<li>分享给其他设备使用</li>
+</ul>`,
+          type: "list"
+        },
+        {
+          title: "⚠️ 安全提示",
+          content: `<ul>
+<li><strong>导出文件包含敏感信息</strong></li>
+<li><strong>请妥善保管导出的文件</strong></li>
+<li><strong>不要分享给他人</strong></li>
+<li>建议加密存储导出文件</li>
+</ul>`,
+          type: "list"
+        },
+        {
+          content: `当前将导出 ${accounts.length} 个账号`,
+          type: "text"
+        }
+      ],
+      confirmText: "开始导出",
+      onConfirm: () => {
+        setInfoModal(null);
+        handleExportAccounts();
+      }
+    });
+  };
+
   // 导出账号
   const handleExportAccounts = async () => {
     try {
@@ -290,15 +399,76 @@ function App() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `trae-accounts-${new Date().toISOString().split("T")[0]}.json`;
+      const fileName = `trae-accounts-${new Date().toISOString().split("T")[0]}.json`;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      addToast("success", `已导出 ${accounts.length} 个账号`);
+      addToast("success", `已导出 ${accounts.length} 个账号到下载文件夹：${fileName}`);
     } catch (err: any) {
       addToast("error", err.message || "导出失败");
     }
+  };
+
+  // 显示导入说明
+  const handleShowImportInfo = () => {
+    setInfoModal({
+      isOpen: true,
+      title: "导入账号说明",
+      icon: "📥",
+      sections: [
+        {
+          title: "📄 文件格式",
+          content: "JSON 文件 (.json)",
+          type: "text"
+        },
+        {
+          title: "📋 文件结构示例",
+          content: `{
+  "accounts": [
+    {
+      "id": "账号ID",
+      "name": "用户名",
+      "email": "邮箱地址",
+      "jwt_token": "Token字符串",
+      "cookies": "Cookies字符串",
+      "plan_type": "套餐类型",
+      "created_at": 时间戳,
+      "is_active": true,
+      ...
+    }
+  ],
+  "active_account_id": "当前活跃账号ID",
+  "current_account_id": "当前使用账号ID"
+}`,
+          type: "code"
+        },
+        {
+          title: "✅ 导入步骤",
+          content: `<ul>
+<li>确认后选择 JSON 文件</li>
+<li>系统自动验证格式</li>
+<li>导入所有有效账号</li>
+</ul>`,
+          type: "list"
+        },
+        {
+          title: "⚠️ 注意事项",
+          content: `<ul>
+<li>仅支持本应用导出的格式</li>
+<li>导入会自动跳过重复账号</li>
+<li>建议定期备份账号数据</li>
+</ul>`,
+          type: "list"
+        }
+      ],
+      confirmText: "选择文件",
+      onConfirm: () => {
+        setInfoModal(null);
+        handleImportAccounts();
+      }
+    });
   };
 
   // 导入账号
@@ -398,6 +568,51 @@ function App() {
     });
   };
 
+  // 删除过期/失效账号
+  const handleDeleteExpiredAccounts = () => {
+    // 筛选出过期或失效的账号
+    const expiredAccounts = accounts.filter((account) => {
+      if (!account.token_expired_at) return false;
+      const expiry = new Date(account.token_expired_at).getTime();
+      if (isNaN(expiry)) return false;
+      return expiry < Date.now(); // Token 已过期
+    });
+
+    if (expiredAccounts.length === 0) {
+      addToast("info", "没有找到过期或失效的账号");
+      return;
+    }
+
+    setConfirmModal({
+      isOpen: true,
+      title: "删除过期账号",
+      message: `检测到 ${expiredAccounts.length} 个过期账号，确定要删除吗？此操作无法撤销。`,
+      type: "warning",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        addToast("info", `正在删除 ${expiredAccounts.length} 个过期账号...`);
+
+        // 并行删除所有过期账号
+        const results = await Promise.allSettled(
+          expiredAccounts.map((account) => api.removeAccount(account.id))
+        );
+
+        // 统计结果
+        const successCount = results.filter((r) => r.status === 'fulfilled').length;
+        const failCount = expiredAccounts.length - successCount;
+
+        setSelectedIds(new Set());
+        await loadAccounts();
+
+        if (failCount === 0) {
+          addToast("success", `成功删除 ${successCount} 个过期账号`);
+        } else {
+          addToast("warning", `删除完成：${successCount} 成功，${failCount} 失败`);
+        }
+      },
+    });
+  };
+
   return (
     <div className="app">
       <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
@@ -423,13 +638,35 @@ function App() {
               </div>
               <div className="header-right">
                 <span className="account-count">共 {accounts.length} 个账号</span>
-                <button className="header-btn" onClick={handleImportAccounts} title="导入账号">
+                <button
+                  className="header-btn danger"
+                  onClick={handleDeleteExpiredAccounts}
+                  title="删除所有过期账号"
+                  disabled={accounts.length === 0}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                    <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    <line x1="10" y1="11" x2="10" y2="17"/>
+                    <line x1="14" y1="11" x2="14" y2="17"/>
+                  </svg>
+                  删除过期
+                  {(() => {
+                    const expiredCount = accounts.filter((account) => {
+                      if (!account.token_expired_at) return false;
+                      const expiry = new Date(account.token_expired_at).getTime();
+                      if (isNaN(expiry)) return false;
+                      return expiry < Date.now();
+                    }).length;
+                    return expiredCount > 0 ? <span className="badge-count">{expiredCount}</span> : null;
+                  })()}
+                </button>
+                <button className="header-btn" onClick={handleShowImportInfo} title="导入账号">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
                   </svg>
                   导入
                 </button>
-                <button className="header-btn" onClick={handleExportAccounts} title="导出账号" disabled={accounts.length === 0}>
+                <button className="header-btn" onClick={handleShowExportInfo} title="导出账号" disabled={accounts.length === 0}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
                   </svg>
@@ -602,6 +839,19 @@ function App() {
           cancelText="取消"
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal(null)}
+        />
+      )}
+
+      {/* 信息展示弹窗 */}
+      {infoModal && (
+        <InfoModal
+          isOpen={infoModal.isOpen}
+          title={infoModal.title}
+          icon={infoModal.icon}
+          sections={infoModal.sections}
+          confirmText={infoModal.confirmText}
+          onConfirm={infoModal.onConfirm}
+          onCancel={() => setInfoModal(null)}
         />
       )}
 

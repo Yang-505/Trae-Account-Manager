@@ -46,14 +46,14 @@ export const Dashboard = memo(function Dashboard({ accounts }: DashboardProps) {
   const usagePercent = totalLimit > 0 ? Math.round((totalUsed / totalLimit) * 100) : 0;
 
   const pieData = [
-    { name: '已使用', value: totalUsed, color: '#6366f1' },
+    { name: '已使用', value: totalUsed, color: '#0ea5e9' },
     { name: '剩余', value: totalLeft, color: '#e5e7eb' },
   ];
 
   // 将 Map 转换为数组
   const quotaData = Array.from(quotaMap.entries()).map(([name, value]) => ({ name, value }));
 
-  const COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef'];
+  const COLORS = ['#0ea5e9', '#06b6d4', '#22d3ee', '#f97316'];
 
   return (
     <div className="dashboard">
@@ -169,7 +169,7 @@ export const Dashboard = memo(function Dashboard({ accounts }: DashboardProps) {
           </div>
           <div className="chart-legend">
             <div className="legend-item">
-              <span className="legend-dot" style={{ background: '#6366f1' }}></span>
+              <span className="legend-dot" style={{ background: '#0ea5e9' }}></span>
               <span>已使用 ({Math.round(totalUsed)})</span>
             </div>
             <div className="legend-item">

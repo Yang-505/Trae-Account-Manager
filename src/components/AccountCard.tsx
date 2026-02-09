@@ -9,6 +9,7 @@ interface AccountCardProps {
     plan_type: string;
     created_at: number;
     is_current?: boolean;
+    token_expired_at?: string | null;
   };
   usage: UsageSummary | null;
   selected: boolean;
@@ -49,7 +50,17 @@ export function AccountCard({ account, usage, selected, onSelect, onContextMenu 
   const usagePercent = totalLimit > 0 ? Math.round((totalUsed / totalLimit) * 100) : 0;
   const usageLevel = getUsageLevel(totalUsed, totalLimit);
 
-  const isTokenExpired = false; // TODO: 根据实际 token 过期时间判断
+  const getTokenStatus = (): "normal" | "expiring" | "expired" | "unknown" => {
+    if (!account.token_expired_at) return "unknown";
+    const expiry = new Date(account.token_expired_at).getTime();
+    if (isNaN(expiry)) return "unknown";
+    const now = Date.now();
+    if (expiry < now) return "expired";
+    if (expiry - now < 3600000) return "expiring"; // < 1小时
+    return "normal";
+  };
+
+  const tokenStatus = getTokenStatus();
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -98,9 +109,9 @@ export function AccountCard({ account, usage, selected, onSelect, onContextMenu 
           <div className="card-name">Trae 账号</div>
         </div>
 
-        <div className={`card-status ${isTokenExpired ? "expired" : "normal"}`}>
+        <div className={`card-status ${tokenStatus === "expired" ? "expired" : tokenStatus === "expiring" ? "expiring" : "normal"}`}>
           <span className="status-indicator"></span>
-          {isTokenExpired ? "已过期" : "正常"}
+          {tokenStatus === "expired" ? "已过期" : tokenStatus === "expiring" ? "即将过期" : "正常"}
         </div>
       </div>
 

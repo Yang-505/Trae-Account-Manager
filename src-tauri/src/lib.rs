@@ -1,7 +1,9 @@
 mod api;
 mod account;
 mod machine;
+mod login;
 
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tauri::State;
 
@@ -10,7 +12,7 @@ use api::{UsageSummary, UsageQueryResponse};
 
 /// 应用状态
 pub struct AppState {
-    pub account_manager: Mutex<AccountManager>,
+    pub account_manager: Arc<Mutex<AccountManager>>,
 }
 
 /// 错误类型
@@ -178,11 +180,33 @@ async fn scan_trae_path() -> Result<String> {
     machine::scan_trae_path().map_err(Into::into)
 }
 
+/// 刷新单个账号 Token
+#[tauri::command]
+async fn refresh_token(account_id: String, state: State<'_, AppState>) -> Result<()> {
+    let mut manager = state.account_manager.lock().await;
+    manager.refresh_token(&account_id).await.map_err(Into::into)
+}
+
+/// 批量刷新所有即将过期的 Token
+#[tauri::command]
+async fn refresh_all_tokens(state: State<'_, AppState>) -> Result<Vec<String>> {
+    let mut manager = state.account_manager.lock().await;
+    manager.refresh_all_tokens().await.map_err(Into::into)
+}
+
 /// 领取礼包
 #[tauri::command]
 async fn claim_gift(account_id: String, state: State<'_, AppState>) -> Result<()> {
     let mut manager = state.account_manager.lock().await;
     manager.claim_birthday_bonus(&account_id).await.map_err(Into::into)
+}
+
+/// 浏览器登录
+#[tauri::command]
+async fn start_browser_login(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<()> {
+    let manager = state.account_manager.clone();
+    login::start_login_flow(app, manager).await.map_err(|e| ApiError { message: e })?;
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -193,7 +217,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
-            account_manager: Mutex::new(account_manager),
+            account_manager: Arc::new(Mutex::new(account_manager)),
         })
         .invoke_handler(tauri::generate_handler![
             add_account_by_token,
@@ -218,6 +242,9 @@ pub fn run() {
             set_trae_path,
             scan_trae_path,
             claim_gift,
+            refresh_token,
+            refresh_all_tokens,
+            start_browser_login,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -9,6 +9,7 @@ export interface AccountBrief {
   created_at: number;
   machine_id: string | null;
   is_current: boolean; // 是否是当前 Trae IDE 正在使用的账号
+  token_expired_at: string | null; // Token 过期时间
 }
 
 // 完整账号信息

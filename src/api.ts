@@ -144,9 +144,23 @@ export async function scanTraePath(): Promise<string> {
   return invoke("scan_trae_path");
 }
 
+// ============ Token 刷新相关 API ============
+
+// 批量刷新所有即将过期的 Token
+export async function refreshAllTokens(): Promise<string[]> {
+  return invoke("refresh_all_tokens");
+}
+
 // ============ 礼包相关 API ============
 
 // 领取礼包
 export async function claimGift(accountId: string): Promise<void> {
   return invoke("claim_gift", { accountId });
+}
+
+// ============ 浏览器登录 ============
+
+// 打开浏览器登录窗口
+export async function startBrowserLogin(): Promise<void> {
+  return invoke("start_browser_login");
 }
